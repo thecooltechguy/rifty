@@ -4,7 +4,7 @@
 pragma solidity ^0.8.0;
 import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 
-interface IERC721Rentable_V1 is IERC721 {
+interface IERC721Rentable is IERC721 {
     /**
         @dev This event will be emitted when token is rented
         tokenId: token id to be rented

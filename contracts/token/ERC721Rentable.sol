@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
-import "./IERC721Rentable_V1.sol";
+import "./IERC721Rentable.sol";
 
-abstract contract ERC721Rentable_V1 is ERC721, IERC721Rentable_V1 {
+abstract contract ERC721Rentable is ERC721, IERC721Rentable {
 
     // struct containing info about the token's current rental
     struct TokenRental {
@@ -21,7 +21,7 @@ abstract contract ERC721Rentable_V1 is ERC721, IERC721Rentable_V1 {
      * @dev See {IERC165-supportsInterface}.
      */
     function supportsInterface(bytes4 interfaceId) public view virtual override(IERC165, ERC721) returns (bool) {
-        return interfaceId == type(IERC721Rentable_V1).interfaceId || super.supportsInterface(interfaceId);
+        return interfaceId == type(IERC721Rentable).interfaceId || super.supportsInterface(interfaceId);
     }
 
     function _beforeTokenTransfer(address from, address to, uint256 tokenId)
@@ -45,7 +45,6 @@ abstract contract ERC721Rentable_V1 is ERC721, IERC721Rentable_V1 {
         // this check ensures that after this token has been rented out, 
         // the renter cannot change the approved address for this token
         // & prevent this token from being re-transfferred to the principal owner after the rental period is over
-        // I believe this contrainst is necessary when the renting happens via a protocol in the middle
         require(!_isRented(tokenId), "Cannot approve an address for a rented token");
         super.approve(to, tokenId);
     }
