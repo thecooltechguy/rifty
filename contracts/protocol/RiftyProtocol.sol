@@ -30,20 +30,20 @@ contract RiftyProtocol is Ownable, Pausable {
         Rental currentRental;
     }
 
-    // 1-to-1 mapping from NFTs to their corresponding listings
+    // 1-to-1 mapping from NFTs (token contract address -> token id) to their corresponding listings
     mapping (address => mapping (uint => Listing)) public listings;
     uint protocolFeePercentBps = 250;
 
     uint constant NUM_SECONDS_PER_MINUTE = 60;
 
+    event deletedListing(address indexed tokenAddress, uint indexed tokenId);
+    event createdListing(address indexed tokenAddress, uint indexed tokenId, address indexed listingOwner, address erc20ContractAddress, uint rent, uint maxRentalMinutes, bool strictlyFinishRentals);
+
+    event createdRental(address indexed tokenAddress, uint indexed tokenId, address indexed renter, uint expiresAt);
+    event finishedRental(address indexed tokenAddress, uint indexed tokenId, address indexed renter);
+
     function setProtocolFeePercent(uint _protocolFeePercentBps) public onlyOwner {
         protocolFeePercentBps = _protocolFeePercentBps;
-    }
-
-    function deleteListing(address tokenAddress, uint tokenId) external whenNotPaused {
-        require(msg.sender == listings[tokenAddress][tokenId].listingOwner, "Only this listing's owner can delete this listing");
-        require(!listings[tokenAddress][tokenId].currentRental.active, "Cannot delete this listing while there is an active rental");
-        delete listings[tokenAddress][tokenId];
     }
 
     function createListing(address tokenAddress, uint256 tokenId, address erc20ContractAddress, uint rent, uint maxRentalMinutes, bool strictlyFinishRentals) public whenNotPaused {        
@@ -64,9 +64,18 @@ contract RiftyProtocol is Ownable, Pausable {
             rent: rent,
             maxRentalMinutes: maxRentalMinutes,
             strictlyFinishRentals:strictlyFinishRentals,
-            currentRental: Rental({active: false, numRentalDays: 0, paidRentalCost:0, paidProtocolCost:0})
+            currentRental: Rental({active: false, numRentalMinutes: 0, paidRentalCost:0, paidProtocolCost:0})
         });
         listings[tokenAddress][tokenId] = newListing;
+        
+        emit createdListing(tokenAddress, tokenId, msg.sender, erc20ContractAddress, rent, maxRentalMinutes, strictlyFinishRentals);
+    }
+
+    function deleteListing(address tokenAddress, uint tokenId) external whenNotPaused {
+        require(msg.sender == listings[tokenAddress][tokenId].listingOwner, "Only this listing's owner can delete this listing");
+        require(!listings[tokenAddress][tokenId].currentRental.active, "Cannot delete this listing while there is an active rental");
+        delete listings[tokenAddress][tokenId];
+        emit deletedListing(tokenAddress, tokenId);
     }
 
     function createRental(address tokenAddress, uint256 tokenId, uint numRentalMinutes) public whenNotPaused {
@@ -98,6 +107,8 @@ contract RiftyProtocol is Ownable, Pausable {
         listings[tokenAddress][tokenId].currentRental.numRentalMinutes = numRentalMinutes;
         listings[tokenAddress][tokenId].currentRental.paidRentalCost = rentalCost;
         listings[tokenAddress][tokenId].currentRental.paidProtocolCost = protocolRevenue;
+
+        emit createdRental(tokenAddress, tokenId, msg.sender, expiresAt);
     }
     
     function finishRental(address tokenAddress, uint256 tokenId) public whenNotPaused {
@@ -116,6 +127,9 @@ contract RiftyProtocol is Ownable, Pausable {
         // This check exists because this contract can only finish rentals that were created by this contract.
         // In order for this contract to create a rental, it must have been the token's approved address.
         // And since renter's cannot change the token's approved address, this contract would remain as the token's approved address.
+        
+        // TODO: Does this explicit check need to exist? Since if the rental isn't managed by this protocol, 
+        //  then the transaction should fail at the tokenContract.finishRental() call
         require(tokenContract.getApproved(tokenId) == address(this), "Cannot finish a rental that is not managed by this protocol");
 
         address _renter = tokenContract.ownerOf(tokenId);
@@ -124,8 +138,7 @@ contract RiftyProtocol is Ownable, Pausable {
             // When listing.strictlyFinishRentals is true,
             // only the token's renter (ie., the token's current owner) or listing creator can call this function
             // note: listing owner should be the same as the token's principal owner
-            address renter = tokenContract.ownerOf(tokenId);
-            require(msg.sender == listing.listingOwner || msg.sender == renter, "Only the token's principal owner or renter can finish this rental");
+            require(msg.sender == listing.listingOwner || msg.sender == _renter, "Only the token's principal owner or renter can finish this rental");
         }
 
         uint rentalExpiresAt = tokenContract.getRentalExpiry(tokenId);
@@ -159,9 +172,6 @@ contract RiftyProtocol is Ownable, Pausable {
         // Delete the listing's current rental
         delete listings[tokenAddress][tokenId].currentRental;
 
-        // listings[tokenAddress][tokenId].currentRental.active = false;
-        // listings[tokenAddress][tokenId].currentRental.numRentalDays = 0;
-        // listings[tokenAddress][tokenId].currentRental.paidRentalCost = 0;
-        // listings[tokenAddress][tokenId].currentRental.paidProtocolCost = 0;
+        emit finishedRental(tokenAddress, tokenId, _renter);
     }
 }
